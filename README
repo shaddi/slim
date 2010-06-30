@@ -1,0 +1,29 @@
+slim.py: A schema-less, indexed, MySQL-based datastore inspired by FriendFeed [1].
+
+Assumes that all values are stored in a homogenous table "entries" with
+a format similar to the following:
+ 
+ CREATE TABLE entities (
+    added_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    id VARCHAR(36) NOT NULL,
+    updated TIMESTAMP NOT NULL,
+    body MEDIUMBLOB,
+    UNIQUE KEY (id),
+    KEY (updated)
+ ) ENGINE=InnoDB;
+ 
+The "body" field stores pickled, zlib-compressed, standard Python dictionaries with arbitrary contents.
+
+Indexes to this table are stored in seperate tables with a schema like the below:
+
+CREATE TABLE index_user_id (
+    user_id VARCHAR(36) NOT NULL,
+    entity_id VARCHAR(36) NOT NULL UNIQUE,
+    PRIMARY KEY (user_id, entity_id)
+) ENGINE=InnoDB;
+
+In this example, the referenced entity would refer to a dictionary with a key "user_id".
+
+This library is still under development and further documentation will follow when released.
+
+[1]: http://bret.appspot.com/entry/how-friendfeed-uses-mysql

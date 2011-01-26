@@ -1,8 +1,9 @@
 slim.py: A schema-less, indexed, MySQL-based datastore inspired by FriendFeed [1].
 
-Assumes that all values are stored in a homogenous table "entries" with
-a format similar to the following:
- 
+Datastore API
+-------------
+The datastore has a very simple API; every element of the datastore is a schema-less bag of properties stored as Python dictionary and is referred to as an 'entity'. The datastore internally represents records as follows:
+
  CREATE TABLE entities (
     added_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     id VARCHAR(36) NOT NULL,
@@ -12,9 +13,16 @@ a format similar to the following:
     KEY (updated)
  ) ENGINE=InnoDB;
  
-The "body" field stores pickled, zlib-compressed, standard Python dictionaries with arbitrary contents.
+The "body" field stores pickled, zlib-compressed, standard Python dictionaries with arbitrary contents. The only required property for these dictionaries is an 'id' field, which is also stored in the table above in the 'id' column. The datastore automatically assigns a 16-byte UUID to each entity upon insertion, and adds this field to the Python dictionary. If the dictionary object already has a field called 'id', the datastore will use this value for the entity id instead. This can be useful for singleton objects that you refer to regularly, such as a site-wide statistics object. In general, however, most situations are adequately handled by the datastore's automatic id assignment. 
 
-Indexes to this table are stored in seperate tables with a schema like the below:
+The datastore has a simple API. To create an instance of the datastore, you must specify the MySQL DB hostname, user, password, and database name, and you may optionally specify a list of indexes (see below). A datastore instance has three operations:
+- add_index(index): Adds an index object to the datastore.
+- put(entity): Stores a dictionary object as an entity in the datastore; the object is stored in serialized and compressed form. Currently, the semantics of this operation call for deleting records having the same entity id that are currently in the backing DB, and then inserting the entity passed as the parameter; in effect, we replace any records in the DB with the same id. This operation is NOT atomic, however, so there is a risk for data loss. This behavior will be changed in future updates. Finally, put checks all indexed fields and updates the relavent index tables for the entity if there are any. Note this incurs an O(n*m) overhead for every insert, n=number of indexed fields and m=fields in dictionary. 
+- get(entity_id): Returns the uncompressed, deserialized dictionary object. 
+
+Indexes
+-------
+Any query you want to make against the datastore that references keys of the entities you're storing needs to have an index. Index tables essentially map values of keys of particular entities to their entity id. Indexes can be added or removed at any time. To create an index, specify a index table name and key name. For instance, say you have some Python dictionary objects that have a "user_id" key, and you want to be able to look up records by user_id. You'd create an index table like this:
 
 CREATE TABLE index_user_id (
     user_id VARCHAR(36) NOT NULL,
@@ -22,8 +30,21 @@ CREATE TABLE index_user_id (
     PRIMARY KEY (user_id, entity_id)
 ) ENGINE=InnoDB;
 
-In this example, the referenced entity would refer to a dictionary with a key "user_id".
+In this example, user_id is the "property" of the index. Indexes can have multiple properties, though in practice it is advisable to create 
+An Index has two operations:
+- get_all(datastore,key=value): Specify a datastore, as well as a single key,value pair that you want to match on. Returns a list of all entities that are stored in the Index that match your search criteria.
+- put(datastore,entity): Stores the entity's indexed values in the index table. This is called during inserts into the datastore.
 
-This library is still under development and further documentation will follow when released.
+Future directions
+-----------------
+This library is still under development. I have found it useful as a simple datastore for prototyping ideas, but I doubt it's in a state that's useful for anything that operates on a meaningful scale. It's a fun project to hack on though.
+
+The current "put" semantics are flawed. Entities should versioned, a la Dynamo. There needs to be an explicit delete instead. And it's arguable that applications should have any other way of accessing entities beyond indexes. 
+
+There needs to be an initialization process for adding new indexes. We need to be able to populate the index table dynamically.
+
+There needs to be a quick way to see what the application-level schema of the data we have stored is. Something that displays all the different types of dictionaries. 
+
+Sharding support -- or some way to scale beyond a single entities table on one DB server -- needs to be implemented.
 
 [1]: http://bret.appspot.com/entry/how-friendfeed-uses-mysql

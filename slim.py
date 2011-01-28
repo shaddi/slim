@@ -43,13 +43,36 @@ class Index:
 	def __init__(self,table,properties):
 		self.table = table
 		self.properties = properties
+	
+	# create the initial table structure in the db
+	def create(self, datastore):
+		# build the initial query string
+		q =	"CREATE TABLE %s ( \
+				entity_id VARCHAR(36) NOT NULL UNIQUE, \
+				%s \
+				PRIMARY KEY (entity_id, %s) \
+			) ENGINE=InnoDB;" % (self.table,
+				" ".join([i + " VARCHAR(36) NOT NULL," for i in self.properties]),
+				", ".join(self.properties))
 
-	# returns entity or entities that match specific 
-	def get_all(self,datastore, **item):
-		key = str(item.keys()[0])
-		value = item[key]
 		c = datastore.conn.cursor()
-		q = "SELECT `entity_id` FROM `%s` WHERE `%s`='%s'" % (self.table,key,value)
+		c.execute(q)
+
+	# returns entity or entities that match specific request
+	# query fails if you try to match on non-indexed fields.
+	# null condition will return all entries in index
+	def get_all(self,datastore, **kvars):
+		condition = []
+		for k, v in kvars.items():
+			tmp = "`%s`='%s'" % (k,v)	
+			condition.append(tmp)
+
+		if len(condition) > 0:
+			" AND ".join(condition)
+			condition = "WHERE %s" % condition
+
+		c = datastore.conn.cursor()
+		q = "SELECT `entity_id` FROM `%s` %s" % (self.table,condition)
 		c.execute(q)
 		
 		rows = c.fetchall()
@@ -66,15 +89,22 @@ class Index:
 			return None
 	
 	# always deletes first then adds
+	# must have an entity id field already present
 	def put(self,datastore, entity):
 		c = datastore.conn.cursor()
-		#print entity
+		idx_keys = []
+		idx_vals = []
+
 		for key in entity:
 			if key in self.properties:
-				q = "DELETE FROM %s WHERE entity_id='%s'" % (self.table,entity["id"])
-				c.execute(q)
-				q = "INSERT INTO %s (%s,entity_id) VALUES('%s', '%s')" % (self.table,key,entity[key],entity["id"])
-				c.execute(q)
+				idx_keys.append(key)
+				idx_vals.append(entity[key])
+
+		q = "DELETE FROM %s WHERE entity_id='%s'" % (self.table,entity["id"])
+		c.execute(q)
+		q = "INSERT INTO %s (%s,entity_id) VALUES('%s', '%s')" % (self.table,"','".join(idx_keys),"','".join(idx_vals),entity["id"])
+
+		c.execute(q)
 
 	
 # todo: implement sanitization
